@@ -12,7 +12,7 @@ default = ["console_error_panic_hook"]
 
 [dependencies]
 wasm-bindgen = { version = "0.2.80", features = ["serde-serialize"]  }
-arcsys = { path = "arcsys" }
+arcsys = { git = "https://github.com/WistfulHopes/arcsys.git" }
 eframe = { version = "0.18.0", features = ["persistence"] }
 rfd = "0.8"
 anyhow = "1"
