@@ -1,25 +1,49 @@
 [package]
-name = "eframe_template"
-default-run = "eframe_template_bin"
+name = "arcsys-collision-editor-wasm"
 version = "0.1.0"
-authors = ["Emil Ernerfeldt <emil.ernerfeldt@gmail.com>"]
+authors = ["WistfulHopes <kp72002@gmail.com>"]
 edition = "2021"
-rust-version = "1.60"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[[bin]]
-name = "eframe_template_bin"
-path = "src/main.rs"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["console_error_panic_hook"]
 
 [dependencies]
-egui = "0.18.0"
+wasm-bindgen = { version = "0.2.80", features = ["serde-serialize"]  }
+arcsys = { path = "arcsys" }
 eframe = { version = "0.18.0", features = ["persistence"] }
-serde = { version = "1", features = ["derive"] } # You only need this if you want app persistence
+rfd = "0.8"
+anyhow = "1"
+serde = { version = "1.0.80", features = ["derive"] }
+serde_json = "1"
+structopt = "0"
+byteorder = "1"
+rayon = "1.5"
+image = "0.24.2"
+poll-promise = "0.1"
+ehttp = "0.2"
+
+# The `console_error_panic_hook` crate provides better debugging of panics by
+# logging them with `console.error`. This is great for development, but requires
+# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
+# code size when deploying.
+console_error_panic_hook = { version = "0.1.6", optional = true }
+
+# `wee_alloc` is a tiny allocator for wasm that is only ~1K in code size
+# compared to the default allocator's ~10K. It is slower than the default
+# allocator, however.
+#
+# Unfortunately, `wee_alloc` requires nightly Rust when targeting wasm for now.
+wee_alloc = { version = "0.4.5", optional = true }
+
+[dev-dependencies]
+wasm-bindgen-test = "0.3.13"
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -30,17 +54,19 @@ tracing-subscriber = "0.3"
 console_error_panic_hook = "0.1.6"
 tracing-wasm = "0.2"
 
+[dependencies.web-sys]
+version = "0.3.4"
+features = [
+  'Headers',
+  'Request',
+  'RequestInit',
+  'RequestMode',
+  'Response',
+  'Window',
+  "FileReader",
+  "HtmlInputElement",
+  "FileList",
+  "File",
+  "ProgressEvent",
+]
 
-[profile.release]
-opt-level = 2 # fast and small wasm
-
-
-[patch.crates-io]
-
-# If you want to use the bleeding edge version of egui and eframe:
-# egui = { git = "https://github.com/emilk/egui", branch = "master" }
-# eframe = { git = "https://github.com/emilk/egui", branch = "master" }
-
-# If you fork https://github.com/emilk/egui you can test with:
-# egui = { path = "../egui/egui" }
-# eframe = { path = "../egui/eframe" }

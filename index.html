@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8"/>
+        <title> New Stack Wasm Test Project</title>
+    </head>
+    <body>
+        <script type="module">
+            import {default as wasm, greet} from "./docs/arcsys_collision_editor_wasm.js";
+            wasm().then((module) => {
+                greet();
+            });
+        </script>
+    </body>
+</html>
