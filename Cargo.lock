@@ -84,6 +84,7 @@ dependencies = [
 [[package]]
 name = "arcsys"
 version = "0.4.0"
+source = "git+https://github.com/WistfulHopes/arcsys.git#7919bfab83704ad1d9bf089f68eaab3091b870fc"
 dependencies = [
  "binrw",
  "byteorder",
@@ -170,6 +171,7 @@ checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
 [[package]]
 name = "bbscript"
 version = "0.9.2"
+source = "git+https://github.com/WistfulHopes/bbscript.git#bacc4610e6f01780dda28dabf36cf5a0a97ec6ee"
 dependencies = [
  "bimap",
  "byteorder",
