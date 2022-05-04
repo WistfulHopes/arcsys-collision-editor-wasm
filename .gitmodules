@@ -1,3 +1,6 @@
 [submodule "arcsys"]
 	path = arcsys
 	url = https://github.com/WistfulHopes/arcsys.git
+[submodule "bbscript"]
+	path = bbscript
+	url = https://github.com/super-continent/bbscript.git
