@@ -1,8 +1,9 @@
 use std::{path::{PathBuf}};
 use arcsys::{ggst::{pac::{GGSTPac}, jonbin::{GGSTJonBin, HitBox}}};
-use eframe::{egui::{self, Response, ComboBox, Sense, Frame}, emath::{Rect, Pos2}, epaint::{Color32, Stroke}};
+use eframe::{egui::{self, ComboBox, Sense, Frame}, emath::{Rect, Pos2}, epaint::{Color32, Stroke}};
 use serde::{Serialize, Deserialize};
 use std::collections::{BTreeMap};
+use substring::Substring;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct Box {
@@ -79,7 +80,7 @@ impl TryFrom<u32> for BoxType {
 }
 
 #[derive(Default)]
-#[derive(serde::Deserialize, serde::Serialize)]
+#[derive(serde::Deserialize)]
 pub struct BoxesWindow {
     path: PathBuf,
     pub jonbins: BTreeMap<String, GGSTJonBin>,
@@ -92,222 +93,207 @@ pub struct BoxesWindow {
     box_info: Box,
     box_index: u32,
     current_name: String,
-    new_name: String,
-    jonb_name: String,
-    image_index: usize,
     pub is_gbvs: bool,
+    pub char_script: String,
+    pub ef_script: String,
+    states: BTreeMap<String, String>,
+    ef_states: BTreeMap<String, String>,
+    current_state: (String, String),
+    is_ef: bool,
 }
 
 impl BoxesWindow {
-    pub fn ui(&mut self, ui: &mut egui::Ui) -> Response {
-        ComboBox::from_label("File list")
-        .selected_text(format!("{:?}", self.selected))
+    pub fn ui(&mut self, ui: &mut egui::Ui) {
+        ui.checkbox(&mut self.is_ef, "Effect States");
+        ComboBox::from_label("State list")
+        .selected_text(format!("{:?}", self.current_state.0))
         .width(150.0)
         .show_ui(ui, |ui| {
-            for (name, _jonbin) in &self.jonbins {
-                if ui.selectable_label(true, name)
-                .clicked()
-                {
-                    self.current_box = None;
-                    self.box_index = 0;
-                    self.boxtype = "".to_string();
-                    self.selected = name.to_string();
-                    self.current_name = "".to_string();
-                };
+            if !self.is_ef {
+                for (name, state) in &self.states {
+                    if ui.selectable_label(true, name)
+                    .clicked()
+                    {
+                        self.current_state = (name.clone(), state.clone());
+                        self.current_box = None;
+                        self.box_index = 0;
+                        self.boxtype = "".to_string();
+                        self.selected = "".to_string();
+                        self.current_name = "".to_string();    
+                    };
+                }
+            }
+            else {
+                for (name, state) in &self.ef_states {
+                    if ui.selectable_label(true, name)
+                    .clicked()
+                    {
+                        self.current_state = (name.clone(), state.clone());
+                    };
+                }
             }
         });
-        if self.selected != ""{
-            self.box_list(ui);
-            ui.label("You can click and drag the canvas to move around!
-Right click to reset to the original position.");
-            Frame::canvas(ui.style()).show(ui, |ui| {
-                self.render_boxes(ui);
-            });
-        }
-        else {
-            ui.horizontal(|ui| {
-                ui.label("Select a file from the file list!");
-            });
-        }
-        ui.horizontal(|_ui| {
-        }).response
-    }
-
-    fn box_list(&mut self, ui: &mut egui::Ui) {
-        let jonb = self.jonbins.get(&self.selected).unwrap();
+        let height = ui.available_height();
         ui.horizontal(|ui| {
-            ComboBox::from_label("Box list")
-            .selected_text(format!("{} #{}", self.boxtype, self.box_index))
-            .width(150.0)
-            .show_ui(ui, |ui| {
-                for boxgroup in &jonb.boxes {
-                    for (index, hitbox) in boxgroup.iter().enumerate() {
-                        let kind = match hitbox.kind.try_into(){
-                            Ok(BoxType::Hurtbox) => "Hurtbox",
-                            Ok(BoxType::Hitbox) => "Hitbox",
-                            Ok(BoxType::ExPoint) => "ExPoint",
-                            Ok(BoxType::ExRect) => "ExRect",
-                            Ok(BoxType::ExVector) => "ExVector",
-                            Ok(BoxType::Push) => "Push",
-                            Ok(BoxType::TempCenter) => "TempCenter",
-                            Ok(BoxType::Neck) => "Neck",
-                            Ok(BoxType::Abdominal) => "Abdominal",
-                            Ok(BoxType::AttackVsPush) => "AttackVsPush",
-                            Ok(BoxType::SpGuard) => "SpGuard",
-                            Ok(BoxType::RLeg) => "RLeg",
-                            Ok(BoxType::LLeg) => "LLeg",
-                            Ok(BoxType::Private0) => "Private0",
-                            Ok(BoxType::Private1) => "Private1",
-                            Ok(BoxType::Private2) => "Private2",
-                            Ok(BoxType::Private3) => "Private3",
-                            Ok(BoxType::ExtendJon) => "ExtendJon",
-                            Err(_) => ""
-                        };
-                        if ui.selectable_label(true, format!("{} #{}", kind, index))
-                        .clicked()
-                        {
-                            self.box_index = index as u32;
-                            self.boxtype = kind.to_string();
-                            self.box_info.x = format!("{}", hitbox.rect.x_offset);
-                            self.box_info.y = format!("{}", hitbox.rect.y_offset);
-                            self.box_info.w = format!("{}", hitbox.rect.width);
-                            self.box_info.h = format!("{}", hitbox.rect.height);
-                            self.current_box = Some(*hitbox);
-                        };
-                    }
+            ui.set_height(height);
+            ui.vertical(|ui|{
+                if self.current_state.0 != "" {
+                    self.display_state(ui);
+                }
+            });
+            ui.vertical(|ui|{
+                if self.selected != ""{
+                    ui.label(format!("Selected sprite: {}", self.selected));
+                    ui.label("You can click and drag the canvas to move around!
+Double click to reset to the original position.");
+                    Frame::canvas(ui.style()).show(ui, |ui| {
+                        self.render_boxes(ui);
+                    });
+                }
+                else {
+                    ui.horizontal(|ui| {
+                        ui.label("Select a sprite to view its hitboxes!");
+                    });
                 }
             });
         });
     }
-    fn render_boxes(&mut self, ui: &mut egui::Ui) -> Response {
-        let jonb = self.jonbins.get_mut(&self.selected).unwrap();
-        let (mut response, painter) = ui.allocate_painter(
-            eframe::emath::Vec2 {
-                x: (ui.available_width()),
-                y: (ui.available_height())
-            },
-            Sense::click_and_drag()
-        );
 
-        if let Some(pointer_pos) = response.interact_pointer_pos() {
-            if self.last_cursor_pos != Default::default()
-            {
-                let pointer_delta = pointer_pos - self.last_cursor_pos;
-                self.offset_x += pointer_delta.x;
-                self.offset_y += pointer_delta.y;
-                response.mark_changed();
-            }
-            self.last_cursor_pos = pointer_pos;
-        }
-        else {
-            self.last_cursor_pos = Default::default();
-        }
-        if response.clicked_by(egui::PointerButton::Secondary)
-        {
-            self.offset_x = 640.0;
-            self.offset_y = 802.0;
-        }
-        
-        for boxgroup in &mut jonb.boxes {
-            for (index, hitbox) in boxgroup.iter_mut().enumerate() {
-                let mut color = Color32::GREEN;
-                let kind = match hitbox.kind.try_into(){
-                    Ok(BoxType::Hurtbox) => {
-                        color = Color32::GREEN;
-                        "Hurtbox"},
-                    Ok(BoxType::Hitbox) => {
-                        color = Color32::RED;
-                        "Hitbox"},
-                    Ok(BoxType::ExPoint) => {
-                        color = Color32::BLUE;
-                        "Hitbox"},
-                    Ok(BoxType::ExRect) => {
-                        color = Color32::GOLD;
-                        "ExRect"},
-                    Ok(BoxType::ExVector) => {
-                        color = Color32::YELLOW;
-                        "ExVector"},
-                    Ok(BoxType::Push) => {
-                        color = Color32::DARK_BLUE;
-                        "Push"},
-                    Ok(BoxType::TempCenter) => {
-                        color = Color32::LIGHT_GREEN;
-                        "TempCenter"},
-                    Ok(BoxType::Neck) => {
-                        color = Color32::LIGHT_RED;
-                        "Neck"},
-                    Ok(BoxType::Abdominal) => {
-                        color = Color32::LIGHT_BLUE;
-                        "Abdominal"},
-                    Ok(BoxType::AttackVsPush) => {
-                        color = Color32::LIGHT_YELLOW;
-                        "AttackVsPush"},
-                    Ok(BoxType::SpGuard) => {
-                        color = Color32::DEBUG_COLOR;
-                        "SpGuard"},
-                    Ok(BoxType::RLeg) => {
-                        color = Color32::KHAKI;
-                        "RLeg"},
-                    Ok(BoxType::LLeg) => {
-                        color = Color32::BROWN;
-                        "LLeg"},
-                    Ok(BoxType::Private0) => {
-                        color = Color32::GRAY;
-                        "LLeg"},
-                    Ok(BoxType::Private1) => {
-                        color = Color32::BLACK;
-                        "LLeg"},
-                    Ok(BoxType::Private2) => {
-                        color = Color32::LIGHT_GRAY;
-                        "LLeg"},
-                    Ok(BoxType::Private3) => {
-                        color = Color32::DARK_GRAY;
-                        "SpGuard"},
-                    Ok(BoxType::ExtendJon)  => {
-                        color = Color32::DARK_RED;
-                        "ExtendJon"},
-                    Err(_) => ""
-                };
-                if self.box_index == index as u32 && self.boxtype == kind
+    fn render_boxes(&mut self, ui: &mut egui::Ui) {
+        let test = self.jonbins.get_mut(&self.selected);
+        if test.is_some() {
+            let jonb = self.jonbins.get_mut(&self.selected).unwrap();
+            let (mut response, painter) = ui.allocate_painter(
+                eframe::emath::Vec2 {
+                    x: (ui.available_width()),
+                    y: (ui.available_height())
+                },
+                Sense::click_and_drag()
+            );
+    
+            if let Some(pointer_pos) = response.interact_pointer_pos() {
+                if self.last_cursor_pos != Default::default()
                 {
-                    hitbox.rect.x_offset = self.current_box.unwrap().rect.x_offset;
-                    hitbox.rect.y_offset = self.current_box.unwrap().rect.y_offset;
-                    hitbox.rect.width = self.current_box.unwrap().rect.width;
-                    hitbox.rect.height = self.current_box.unwrap().rect.height;
+                    let pointer_delta = pointer_pos - self.last_cursor_pos;
+                    self.offset_x += pointer_delta.x;
+                    self.offset_y += pointer_delta.y;
+                    response.mark_changed();
                 }
-                painter.rect_stroke(
-                    Rect { min: Pos2{x: (hitbox.rect.x_offset + self.offset_x - 1.5), 
-                        y: (hitbox.rect.y_offset + self.offset_y - 1.5)}, 
-                        max: Pos2{x: (hitbox.rect.x_offset + hitbox.rect.width + self.offset_x + 1.5 ), 
-                        y: (hitbox.rect.y_offset + hitbox.rect.height + self.offset_y + 1.5)} },
-                    0.0, 
-                    Stroke{width: 3.0, color},
-                );
+                self.last_cursor_pos = pointer_pos;
+            }
+            else {
+                self.last_cursor_pos = Default::default();
+            }
+            if response.double_clicked()
+            {
+                self.offset_x = 960.0;
+                self.offset_y = 802.0;
+            }
+            for boxgroup in &mut jonb.boxes {
+                for (index, hitbox) in boxgroup.iter_mut().enumerate() {
+                    let mut color = Color32::GREEN;
+                    let kind = match hitbox.kind.try_into(){
+                        Ok(BoxType::Hurtbox) => {
+                            color = Color32::GREEN;
+                            "Hurtbox"},
+                        Ok(BoxType::Hitbox) => {
+                            color = Color32::RED;
+                            "Hitbox"},
+                        Ok(BoxType::ExPoint) => {
+                            color = Color32::BLUE;
+                            "Hitbox"},
+                        Ok(BoxType::ExRect) => {
+                            color = Color32::GOLD;
+                            "ExRect"},
+                        Ok(BoxType::ExVector) => {
+                            color = Color32::YELLOW;
+                            "ExVector"},
+                        Ok(BoxType::Push) => {
+                            color = Color32::DARK_BLUE;
+                            "Push"},
+                        Ok(BoxType::TempCenter) => {
+                            color = Color32::LIGHT_GREEN;
+                            "TempCenter"},
+                        Ok(BoxType::Neck) => {
+                            color = Color32::LIGHT_RED;
+                            "Neck"},
+                        Ok(BoxType::Abdominal) => {
+                            color = Color32::LIGHT_BLUE;
+                            "Abdominal"},
+                        Ok(BoxType::AttackVsPush) => {
+                            color = Color32::LIGHT_YELLOW;
+                            "AttackVsPush"},
+                        Ok(BoxType::SpGuard) => {
+                            color = Color32::DEBUG_COLOR;
+                            "SpGuard"},
+                        Ok(BoxType::RLeg) => {
+                            color = Color32::KHAKI;
+                            "RLeg"},
+                        Ok(BoxType::LLeg) => {
+                            color = Color32::BROWN;
+                            "LLeg"},
+                        Ok(BoxType::Private0) => {
+                            color = Color32::GRAY;
+                            "LLeg"},
+                        Ok(BoxType::Private1) => {
+                            color = Color32::BLACK;
+                            "LLeg"},
+                        Ok(BoxType::Private2) => {
+                            color = Color32::LIGHT_GRAY;
+                            "LLeg"},
+                        Ok(BoxType::Private3) => {
+                            color = Color32::DARK_GRAY;
+                            "SpGuard"},
+                        Ok(BoxType::ExtendJon)  => {
+                            color = Color32::DARK_RED;
+                            "ExtendJon"},
+                        Err(_) => ""
+                    };
+                    if self.box_index == index as u32 && self.boxtype == kind
+                    {
+                        hitbox.rect.x_offset = self.current_box.unwrap().rect.x_offset;
+                        hitbox.rect.y_offset = self.current_box.unwrap().rect.y_offset;
+                        hitbox.rect.width = self.current_box.unwrap().rect.width;
+                        hitbox.rect.height = self.current_box.unwrap().rect.height;
+                    }
+                    painter.rect_stroke(
+                        Rect { min: Pos2{x: (hitbox.rect.x_offset + self.offset_x ), 
+                            y: (hitbox.rect.y_offset + self.offset_y)}, 
+                            max: Pos2{x: (hitbox.rect.x_offset + hitbox.rect.width + self.offset_x), 
+                            y: (hitbox.rect.y_offset + hitbox.rect.height + self.offset_y)} },
+                        0.0, 
+                        Stroke{width: 3.0, color},
+                    );
+                }
             }
         }
-        response
     }
 
-    fn reset(&mut self)
+    pub fn reset(&mut self)
     {
         self.path = Default::default();
         self.jonbins = Default::default();
         self.selected = "".to_string();
         self.boxtype = "".to_string();
-        self.offset_x = 640.0;
+        self.offset_x = 960.0;
         self.offset_y = 802.0;
         self.last_cursor_pos = Default::default();
         self.current_box = Default::default();
         self.box_info = Default::default();
         self.box_index = 0;
+        self.current_name = Default::default();
+        self.char_script = Default::default();
+        self.ef_script = Default::default();
+        self.states = Default::default();
+        self.ef_states = Default::default();
+        self.current_state = Default::default();
     }
 
     pub fn open_file(&mut self, pac: &GGSTPac) -> bool {
-        self.reset();
         self.read_pac(pac);
         return true;
     }
-  
+
     fn read_pac(&mut self, pac: &GGSTPac) {
         for i in &pac.files {
             match GGSTJonBin::parse(&i.contents, self.is_gbvs){
@@ -320,5 +306,68 @@ Right click to reset to the original position.");
                     continue},
             };
         }
+    }
+
+    pub fn collect_states(&mut self) {
+        let begin_state: Vec<_> = self.char_script.match_indices("beginState").collect();
+        let end_state: Vec<_> = self.char_script.match_indices("endState").collect();
+        
+        for (index, state_pos) in begin_state.iter().enumerate() {
+            let state = self.char_script.substring(state_pos.0, end_state[index].0).to_string();
+            let state_end = self.char_script[state_pos.0..].find(0xa as char).map(|i| i + state_pos.0);
+            let state_name = self.char_script.substring(state_pos.0, state_end.unwrap()).to_string();
+            self.states.insert(state_name, state);
+        }
+    }
+
+    pub fn collect_ef_states(&mut self) {
+        let begin_state: Vec<_> = self.ef_script.match_indices("beginState").collect();
+        let end_state: Vec<_> = self.ef_script.match_indices("endState").collect();
+        
+        for (index, state_pos) in begin_state.iter().enumerate() {
+            let state = self.ef_script.substring(state_pos.0, end_state[index].0).to_string();
+            let state_end = self.ef_script[state_pos.0..].find(0xa as char).map(|i| i + state_pos.0);
+            let state_name = self.ef_script.substring(state_pos.0, state_end.unwrap()).to_string();
+            self.ef_states.insert(state_name, state);
+        }
+    }
+
+    fn display_state(&mut self, ui: &mut egui::Ui)
+    {
+        egui::ScrollArea::vertical()
+        .max_width(350.0)
+        .show(ui, |ui| {
+            let line_breaks: Vec<_> = self.current_state.1.match_indices(0xa as char).collect();
+            let mut prev_index: usize = 0;
+    
+            for line_index in line_breaks {
+                let line = self.current_state.1.substring(prev_index, line_index.0).to_string();
+                if line.contains("sprite: ") {
+                    if ui.selectable_label(true, &line)
+                    .clicked()
+                    {
+                        let quotes: Vec<_> = line.match_indices("'").collect();
+                        let name = line.substring(quotes[0].0 + 1, quotes[1].0).to_string();
+                        self.current_box = None;
+                        self.box_index = 0;
+                        self.boxtype = "".to_string();
+                        self.selected = name.to_string();
+                        self.current_name = "".to_string();
+                    };
+                }
+                else if line.contains("hit:")
+                {
+                    ui.colored_label(egui::Color32::RED, &line);
+                }
+                else if line.contains("grabOrRelease:")
+                {
+                    ui.colored_label(egui::Color32::RED, &line);
+                }
+                else {
+                    ui.label(&line);
+                }
+                prev_index = line_index.0 + 1;
+            }
+        });
     }
 }
