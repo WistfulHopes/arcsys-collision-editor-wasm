@@ -184,7 +184,7 @@ Right click to reset to the original position.");
         let (mut response, painter) = ui.allocate_painter(
             eframe::emath::Vec2 {
                 x: (ui.available_width()),
-                y: (ui.available_height() - 150.0)
+                y: (ui.available_height())
             },
             Sense::click_and_drag()
         );
