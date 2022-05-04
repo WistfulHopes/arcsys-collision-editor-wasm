@@ -1,9 +1,11 @@
-use std::{path::{PathBuf}};
-use arcsys::{ggst::{pac::{GGSTPac}, jonbin::{GGSTJonBin, HitBox}}};
-use eframe::{egui::{self, ComboBox, Sense, Frame}, emath::{Rect, Pos2}, epaint::{Color32, Stroke}};
+use std::{path::{PathBuf}, io::Cursor};
+use arcsys::{ggst::{pac::{GGSTPac}, jonbin::{GGSTJonBin}}};
+use eframe::{egui::{self, Sense, Frame}, emath::{Rect, Pos2, Vec2}, epaint::{Color32, Stroke, ColorImage, Mesh, TextureId, Shape}};
+use image::{ImageError};
 use serde::{Serialize, Deserialize};
 use std::collections::{BTreeMap};
 use substring::Substring;
+use image::io::Reader as ImageReader;
 
 #[derive(serde::Deserialize, serde::Serialize)]
 struct Box {
@@ -80,18 +82,14 @@ impl TryFrom<u32> for BoxType {
 }
 
 #[derive(Default)]
-#[derive(serde::Deserialize)]
 pub struct BoxesWindow {
     path: PathBuf,
     pub jonbins: BTreeMap<String, GGSTJonBin>,
-    selected: String,
-    boxtype: String,
+    pub selected: String,
     offset_x: f32,
     offset_y: f32,
     last_cursor_pos: Pos2,
-    current_box: Option<HitBox>,
     box_info: Box,
-    box_index: u32,
     current_name: String,
     pub is_gbvs: bool,
     pub char_script: String,
@@ -100,47 +98,63 @@ pub struct BoxesWindow {
     ef_states: BTreeMap<String, String>,
     current_state: (String, String),
     is_ef: bool,
+    show_state_list: bool,
+    show_state: bool,
+    pub box_changed: bool,
+    pub image: Option<ColorImage>,
+    pub texture: Option<egui::TextureHandle>,
+    pub reset_image: bool,
 }
 
 impl BoxesWindow {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        ui.checkbox(&mut self.is_ef, "Effect States");
-        ComboBox::from_label("State list")
-        .selected_text(format!("{:?}", self.current_state.0))
-        .width(150.0)
-        .show_ui(ui, |ui| {
-            if !self.is_ef {
-                for (name, state) in &self.states {
-                    if ui.selectable_label(true, name)
-                    .clicked()
-                    {
-                        self.current_state = (name.clone(), state.clone());
-                        self.current_box = None;
-                        self.box_index = 0;
-                        self.boxtype = "".to_string();
-                        self.selected = "".to_string();
-                        self.current_name = "".to_string();    
-                    };
-                }
-            }
-            else {
-                for (name, state) in &self.ef_states {
-                    if ui.selectable_label(true, name)
-                    .clicked()
-                    {
-                        self.current_state = (name.clone(), state.clone());
-                    };
-                }
-            }
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.is_ef, "Effect States");
+            ui.checkbox(&mut self.show_state_list, "Show state list");
+            ui.checkbox(&mut self.show_state, "Show state info");
         });
         let height = ui.available_height();
         ui.horizontal(|ui| {
             ui.set_height(height);
-            ui.vertical(|ui|{
-                if self.current_state.0 != "" {
-                    self.display_state(ui);
-                }
-            });
+            if self.show_state_list {
+                ui.vertical(|ui| {
+                    ui.push_id(23561, |ui|{
+                        egui::ScrollArea::vertical()
+                        .max_width(250.0)
+                        .show(ui, |ui| {
+                            if !self.is_ef {
+                                for (name, state) in &self.states {
+                                    if ui.selectable_label(true, name)
+                                    .clicked()
+                                    {
+                                        self.current_state = (name.clone(), state.clone());
+                                        self.selected = "".to_string();
+                                        self.current_name = "".to_string();    
+                                    };
+                                }
+                            }
+                            else {
+                                for (name, state) in &self.ef_states {
+                                    if ui.selectable_label(true, name)
+                                    .clicked()
+                                    {
+                                        self.current_state = (name.clone(), state.clone());
+                                        self.selected = "".to_string();
+                                        self.current_name = "".to_string();                        
+                                    };
+                                }
+                            }
+                        });
+                    });
+                });    
+            }
+            if self.show_state {
+                ui.vertical(|ui|{
+                    if self.current_state.0 != "" {
+                        self.display_state(ui);
+                    }
+                });
+            };
             ui.vertical(|ui|{
                 if self.selected != ""{
                     ui.label(format!("Selected sprite: {}", self.selected));
@@ -162,15 +176,15 @@ Double click to reset to the original position.");
     fn render_boxes(&mut self, ui: &mut egui::Ui) {
         let test = self.jonbins.get_mut(&self.selected);
         if test.is_some() {
+            let width = ui.available_width();
             let jonb = self.jonbins.get_mut(&self.selected).unwrap();
             let (mut response, painter) = ui.allocate_painter(
                 eframe::emath::Vec2 {
-                    x: (ui.available_width()),
-                    y: (ui.available_height())
+                    x: width,
+                    y: ui.available_height()
                 },
                 Sense::click_and_drag()
             );
-    
             if let Some(pointer_pos) = response.interact_pointer_pos() {
                 if self.last_cursor_pos != Default::default()
                 {
@@ -184,15 +198,39 @@ Double click to reset to the original position.");
             else {
                 self.last_cursor_pos = Default::default();
             }
+            if self.box_changed {
+                self.offset_x = width * 0.8;
+                self.offset_y = 802.0;
+                self.box_changed = false;
+            }
             if response.double_clicked()
             {
-                self.offset_x = 960.0;
+                self.offset_x = width * 0.8;
                 self.offset_y = 802.0;
             }
+
+            if self.image.is_some() {
+                let image = self.image.as_ref().unwrap();
+                if image.width() != 0 && image.height() != 0 {
+                    let texture: &egui::TextureHandle = self.texture.get_or_insert_with(|| {
+                        // Load the texture only once.
+                        ui.ctx().load_texture("render", image.clone())
+                    });
+                    let mut mesh = Mesh::with_texture(TextureId::from(texture));
+                    let pos = Pos2{x: 0.0, y: 0.0};
+                    let uv = Pos2{x: 0.0, y: 0.0};
+                    let max = Vec2{x: 1920.0, y: 1080.0};
+                    let rect = Rect::from_min_size(pos, max);
+                    let uv = Rect::from_min_size(uv, max);
+                    mesh.add_rect_with_uv(rect, uv, Color32::WHITE);
+                    painter.add(Shape::mesh(mesh));
+                }
+            }
+
             for boxgroup in &mut jonb.boxes {
-                for (index, hitbox) in boxgroup.iter_mut().enumerate() {
+                for hitbox in boxgroup {
                     let mut color = Color32::GREEN;
-                    let kind = match hitbox.kind.try_into(){
+                    match hitbox.kind.try_into(){
                         Ok(BoxType::Hurtbox) => {
                             color = Color32::GREEN;
                             "Hurtbox"},
@@ -249,13 +287,6 @@ Double click to reset to the original position.");
                             "ExtendJon"},
                         Err(_) => ""
                     };
-                    if self.box_index == index as u32 && self.boxtype == kind
-                    {
-                        hitbox.rect.x_offset = self.current_box.unwrap().rect.x_offset;
-                        hitbox.rect.y_offset = self.current_box.unwrap().rect.y_offset;
-                        hitbox.rect.width = self.current_box.unwrap().rect.width;
-                        hitbox.rect.height = self.current_box.unwrap().rect.height;
-                    }
                     painter.rect_stroke(
                         Rect { min: Pos2{x: (hitbox.rect.x_offset + self.offset_x ), 
                             y: (hitbox.rect.y_offset + self.offset_y)}, 
@@ -274,19 +305,19 @@ Double click to reset to the original position.");
         self.path = Default::default();
         self.jonbins = Default::default();
         self.selected = "".to_string();
-        self.boxtype = "".to_string();
-        self.offset_x = 960.0;
+        self.offset_x = 480.0;
         self.offset_y = 802.0;
         self.last_cursor_pos = Default::default();
-        self.current_box = Default::default();
         self.box_info = Default::default();
-        self.box_index = 0;
         self.current_name = Default::default();
         self.char_script = Default::default();
         self.ef_script = Default::default();
         self.states = Default::default();
         self.ef_states = Default::default();
         self.current_state = Default::default();
+        self.show_state_list = true;
+        self.show_state = true;
+        self.box_changed = true;
     }
 
     pub fn open_file(&mut self, pac: &GGSTPac) -> bool {
@@ -335,7 +366,7 @@ Double click to reset to the original position.");
     fn display_state(&mut self, ui: &mut egui::Ui)
     {
         egui::ScrollArea::vertical()
-        .max_width(350.0)
+        .max_width(250.0)
         .show(ui, |ui| {
             let line_breaks: Vec<_> = self.current_state.1.match_indices(0xa as char).collect();
             let mut prev_index: usize = 0;
@@ -348,11 +379,10 @@ Double click to reset to the original position.");
                     {
                         let quotes: Vec<_> = line.match_indices("'").collect();
                         let name = line.substring(quotes[0].0 + 1, quotes[1].0).to_string();
-                        self.current_box = None;
-                        self.box_index = 0;
-                        self.boxtype = "".to_string();
                         self.selected = name.to_string();
                         self.current_name = "".to_string();
+                        self.reset_image = true;
+                        self.image = None;
                     };
                 }
                 else if line.contains("hit:")
@@ -369,5 +399,26 @@ Double click to reset to the original position.");
                 prev_index = line_index.0 + 1;
             }
         });
+    }
+
+    pub fn bytes_to_image(&mut self, bytes: &Vec<u8>) -> Result<egui::ColorImage, ImageError>{
+        let buffer: &[u8] = &bytes;
+        let reader = ImageReader::new(
+            Cursor::new(buffer)
+        )
+        .with_guessed_format()?;
+        let image = match reader.decode() {
+            Ok(image) => {
+                let size = [image.width() as _, image.height() as _];
+                let image_buffer = image.to_rgba8();
+                let pixels = image_buffer.as_flat_samples();
+                Ok(egui::ColorImage::from_rgba_unmultiplied(
+                    size,
+                    pixels.as_slice(),
+                ))
+            }
+            Err(e) => Err(e),
+        };
+        image
     }
 }

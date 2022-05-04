@@ -13,6 +13,7 @@ pub struct MyApp {
     char_promise: Option<Promise<Vec<u8>>>,
     ef_promise: Option<Promise<Vec<u8>>>,
     ron_promise: Option<Promise<Result<GameDB, BBScriptError>>>,
+    image_promise: Option<Promise<Vec<u8>>>,
     boxes_window: BoxesWindow,
     loaded: bool,
     selected: String,
@@ -95,6 +96,22 @@ impl eframe::App for MyApp {
             promise
         });
         
+        let image_promise = self.image_promise.get_or_insert_with(|| {
+            // Begin download.
+            // We download the image using `ehttp`, a library that works both in WASM and on native.
+            // We use the `poll-promise` library to communicate with the UI thread.
+            let ctx = ctx.clone();
+            let (sender, promise) = Promise::new();
+            let request = ehttp::Request::get(format!("https://wistfulhopes.neocities.org/images/{}/{}.png", self.selected, self.boxes_window.selected));
+            ehttp::fetch(request, move |response| {
+                let image = response_to_bytes(response.unwrap());
+                sender.send(image); // send the results back to the UI thread.
+                ctx.request_repaint(); // wake up UI thread
+            });
+            self.boxes_window.reset_image = false;
+            promise
+        });
+        
         let ron_promise = self.ron_promise.get_or_insert_with(|| {
             // Begin download.
             // We download the image using `ehttp`, a library that works both in WASM and on native.
@@ -136,13 +153,21 @@ impl eframe::App for MyApp {
                 ui.ctx().set_visuals(visuals);
             });
             match ron_promise.ready() {
-                None => ui.label("Loading game functions..."),
-                Some(Err(e)) => ui.label(format!("Failed to load game functions! {}", e)),
+                None => {
+                    ui.label("Loading game functions...");
+                    ()
+                }
+                Some(Err(e)) => {
+                    ui.label(format!("Failed to load game functions! {}", e));
+                    ()
+                }
                 Some(Ok(ron)) => {
                     ui.label("Game functions loaded!");
-                            
                     match char_promise.ready() {
-                        None => ui.label("Loading character script..."),
+                        None => {
+                            ui.label("Loading character script...");
+                            ()
+                        }
                         Some(bytes) => {
                             if self.boxes_window.char_script == "" {
                                 self.boxes_window.char_script = match run_parser(ron,bytes, Some(0 as usize), Some(0 as usize), false) {
@@ -152,17 +177,17 @@ impl eframe::App for MyApp {
                                 self.boxes_window.collect_states();
                             }
                             if self.boxes_window.char_script == "Error".to_string() {
-                                ui.label(format!("Failed to load character script!!"))
+                                ui.label(format!("Failed to load character script!!"));
                             }
-                            else {
-                                ui.horizontal(|_ui| {
-                                }).response
-                            }
+                            ()
                         }
                     };
 
                     match ef_promise.ready() {
-                        None => ui.label("Loading effect script..."),
+                        None => {
+                            ui.label("Loading effect script...");
+                            ()
+                        }
                         Some(bytes) => {
                             if self.boxes_window.ef_script == "" {
                                 self.boxes_window.ef_script = match run_parser(ron,bytes, Some(0 as usize), Some(0 as usize), false) {
@@ -172,22 +197,37 @@ impl eframe::App for MyApp {
                                 self.boxes_window.collect_ef_states();
                             };
                             if self.boxes_window.ef_script == "Error".to_string() {
-                                ui.label("Failed to load effect script!!")
+                                ui.label("Failed to load effect script!!");
                             }
-                            else {
-                                ui.horizontal(|_ui| {
-                                }).response
-                            }
+                            ()
                         }
                     };
-                    ui.horizontal(|_ui|{
-                    }).response
+
+                    match image_promise.ready() {
+                        None => {
+                            ()
+                        }
+                        Some(bytes) => {
+                            if self.boxes_window.image.is_none() {
+                                match self.boxes_window.bytes_to_image(bytes) {
+                                    Ok(image) => {
+                                        self.boxes_window.image = Some(image);
+                                    }
+                                    Err(_) => (),
+                                }    
+                            }
+                        }
+                    }
                 }
             };
             match col_promise.ready() {
-                None => ui.label("Loading..."),
+                None => {
+                    ui.label("Loading collision data...");
+                    ()
+                }
                 Some(Err(e)) => {
-                    ui.label(format!("Failed to read pac! Error: {}", e))
+                    ui.label(format!("Failed to read pac! Error: {}", e));
+                    ()
                 },
                 Some(Ok(pac)) => {
                     if !self.loaded {
@@ -195,9 +235,6 @@ impl eframe::App for MyApp {
                     }
                     self.loaded = true;
                     self.boxes_window.ui(ui);
-                    ui.horizontal(|_ui|{
-
-                    }).response
                 }
             }
         });
@@ -205,6 +242,11 @@ impl eframe::App for MyApp {
             self.col_promise = None;
             self.char_promise = None;
             self.ef_promise = None;
+        }
+        if self.boxes_window.reset_image {
+            self.image_promise = None;
+            self.boxes_window.image = Default::default();
+            self.boxes_window.texture = Default::default();
         }
     }
 }
