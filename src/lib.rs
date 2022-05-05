@@ -1,7 +1,10 @@
 mod app;
+mod render;
+
 pub use app::MyApp;
-use bevy::{core_pipeline::ClearColor, prelude::{Msaa, Color, App, ResMut, AddAsset}, DefaultPlugins, window::{PresentMode, WindowDescriptor}, log::LogPlugin};
+use bevy::{core_pipeline::ClearColor, prelude::{Msaa, Color, App, ResMut, AddAsset}, DefaultPlugins, log::LogPlugin};
 use bevy_egui::{EguiPlugin, EguiContext, egui};
+use render::CapturePlugin;
 use wasm_bindgen::prelude::*;
 
 use crate::app::{PacAsset, PacLoader, BBSAsset, BBSLoader, RonAsset, RonLoader};
@@ -21,15 +24,13 @@ pub fn start(_canvas_id: &str) {
     app.insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .insert_resource(Msaa { samples: 4 })
         // Optimal power saving and present mode settings for desktop apps.
-        .insert_resource(WindowDescriptor {
-            present_mode: PresentMode::Mailbox,
-            ..Default::default()
-        })
         .add_plugins_with(DefaultPlugins, |plugins| {
             plugins.disable::<LogPlugin>()
         })
         .add_plugin(EguiPlugin)
+        .add_plugin(CapturePlugin)
         .init_resource::<MyApp>()
+        .init_resource::<app::AssetPack>()
         .add_asset::<PacAsset>()
         .add_asset::<BBSAsset>()
         .add_asset::<RonAsset>()
@@ -37,7 +38,11 @@ pub fn start(_canvas_id: &str) {
         .init_asset_loader::<BBSLoader>()
         .init_asset_loader::<RonLoader>()
         .add_startup_system(configure_visuals)
-        .add_system(app::update);
+        .add_system(app::update)
+        .add_system(app::load_gltf)
+        .add_system(app::load_animation)
+        .add_system(app::spawn_scene);
+
     #[cfg(target_arch = "wasm32")]
     {
         app.add_plugin(bevy_web_resizer::Plugin);

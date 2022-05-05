@@ -1,34 +1,13 @@
-use std::{path::{PathBuf}, io::Cursor};
+use std::{path::{PathBuf}};
 use arcsys::{ggst::{pac::{GGSTPac}, jonbin::{GGSTJonBin}}};
 use bevy_egui::{egui::{self, Sense, Frame, emath::{Rect, Pos2, Vec2}, epaint::{Color32, Stroke, ColorImage, Mesh, TextureId, Shape}}};
-use image::{ImageError};
 use serde::{Serialize, Deserialize};
 use std::collections::{BTreeMap};
 use substring::Substring;
-use image::io::Reader as ImageReader;
-
-#[derive(serde::Deserialize, serde::Serialize)]
-struct Box {
-    x: String,
-    y: String,
-    w: String,
-    h: String,
-}
 
 #[derive(Serialize, Deserialize)]
 enum MetaKind {
     Pac(GGSTPac),
-}
-
-impl Default for Box {
-    fn default() -> Self {
-        Self {
-            x: "0.0".to_owned(),
-            y: "0.0".to_owned(),
-            w: "0.0".to_owned(),
-            h: "0.0".to_owned(),
-        }
-    }
 }
 
 #[derive(Copy, Clone)]
@@ -89,7 +68,6 @@ pub struct BoxesWindow {
     offset_x: f32,
     offset_y: f32,
     last_cursor_pos: Pos2,
-    box_info: Box,
     current_name: String,
     pub is_gbvs: bool,
     pub char_script: String,
@@ -108,6 +86,7 @@ pub struct BoxesWindow {
 
 impl BoxesWindow {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
+        self.reset_image = false;
         ui.horizontal(|ui| {
             ui.checkbox(&mut self.is_ef, "Effect States");
             ui.checkbox(&mut self.show_state_list, "Show state list");
@@ -308,7 +287,6 @@ Double click to reset to the original position.");
         self.offset_x = 480.0;
         self.offset_y = 802.0;
         self.last_cursor_pos = Default::default();
-        self.box_info = Default::default();
         self.current_name = Default::default();
         self.char_script = Default::default();
         self.ef_script = Default::default();
@@ -399,26 +377,5 @@ Double click to reset to the original position.");
                 prev_index = line_index.0 + 1;
             }
         });
-    }
-
-    pub fn bytes_to_image(&mut self, bytes: &Vec<u8>) -> Result<egui::ColorImage, ImageError>{
-        let buffer: &[u8] = &bytes;
-        let reader = ImageReader::new(
-            Cursor::new(buffer)
-        )
-        .with_guessed_format()?;
-        let image = match reader.decode() {
-            Ok(image) => {
-                let size = [image.width() as _, image.height() as _];
-                let image_buffer = image.to_rgba8();
-                let pixels = image_buffer.as_flat_samples();
-                Ok(egui::ColorImage::from_rgba_unmultiplied(
-                    size,
-                    pixels.as_slice(),
-                ))
-            }
-            Err(e) => Err(e),
-        };
-        image
     }
 }

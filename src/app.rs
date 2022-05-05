@@ -1,11 +1,14 @@
 use arcsys::ggst::pac::GGSTPac;
-use bevy::{prelude::{ResMut, AssetServer, Res, Handle, Assets}, reflect::TypeUuid, asset::{AssetLoader, LoadContext, BoxedFuture, LoadedAsset}};
+use bevy::{prelude::{ResMut, AssetServer, Res, Handle, Assets, Commands, SpawnSceneCommands}, reflect::TypeUuid, asset::{AssetLoader, LoadContext, BoxedFuture, LoadedAsset}, gltf::Gltf};
 use bevy_egui::{egui::{self, ComboBox}, EguiContext};
 use serde::Deserialize;
 use self::boxes::BoxesWindow;
 use bbscript::{command_db::{GameDB}, run_parser};
 
 mod boxes;
+
+#[derive(Default)]
+pub struct AssetPack(Handle<Gltf>);
 
 #[derive(Deserialize, TypeUuid, Default)]
 #[uuid = "39cadc56-aa9c-4543-8640-a018b74b5052"]
@@ -89,7 +92,7 @@ impl AssetLoader for RonLoader {
 }
 #[derive(Default)]
 pub struct MyApp {
-    boxes_window: BoxesWindow,
+    pub boxes_window: BoxesWindow,
     loaded: bool,
     selected: String,
     ggst_file_list: Vec<String>,
@@ -98,6 +101,9 @@ pub struct MyApp {
     char_script: Option<Vec<u8>>,
     ef_script: Option<Vec<u8>>,
     ron: Option<GameDB>,
+    model_part: String,
+    anim_part: String,
+    load_model: bool,
 }
 pub fn update(
     mut egui_ctx: ResMut<EguiContext>,
@@ -106,7 +112,9 @@ pub fn update(
     pacs: ResMut<Assets<PacAsset>>,
     scripts: ResMut<Assets<BBSAsset>>,
     rons: ResMut<Assets<RonAsset>>,
-    ) {
+) {
+    ui_state.load_model = false;
+
     if ui_state.selected == "".to_string() {
         ui_state.selected = "SOL".to_string();
     }
@@ -132,6 +140,7 @@ pub fn update(
         ui_state.ggst_file_list.push("BKN".to_string());
         ui_state.ggst_file_list.push("TST".to_string());
     }
+
     if !ui_state.loaded {
         ui_state.boxes_window.reset();
     }
@@ -183,6 +192,7 @@ pub fn update(
                         ui_state.selected = name.clone();
                         ui_state.loaded = false;
                         ui_state.file_changed = true;
+                        ui_state.load_model = true;
                     };
                 }
             });
@@ -266,4 +276,41 @@ pub fn open_file(file_buf: Vec<u8>) -> Result<GGSTPac, arcsys::Error> {
         Ok(file) => return Ok(file),
         Err(e) => return Err(e),
     };
+}
+
+pub fn load_gltf (
+    ui_state: ResMut<MyApp>,
+    server: Res<AssetServer>,
+    mut commands: Commands,
+) {
+    if ui_state.load_model {
+        let path = format!("models/{}/{}_{}.gltf", ui_state.selected, ui_state.selected.to_ascii_lowercase(), ui_state.model_part);
+        let gltf: Handle<Gltf> = server.load(&path);
+        commands.insert_resource(AssetPack(gltf));    
+    }
+}
+
+pub fn load_animation (
+    ui_state: ResMut<MyApp>,
+    assets_gltf: Res<Assets<Gltf>>,
+    mut commands: Commands,
+    my: Res<AssetPack>,
+) {
+    if let Some(gltf) = assets_gltf.get(&my.0) {
+        let path = format!("{}_{}", ui_state.boxes_window.selected, ui_state.anim_part);
+        commands.insert_resource(gltf.named_animations[&path].clone())
+    }    
+}
+
+pub fn spawn_scene(
+    ui_state: ResMut<MyApp>,
+    assets_gltf: Res<Assets<Gltf>>,
+    mut commands: Commands,
+    my: Res<AssetPack>,
+) {
+    if ui_state.load_model {
+        if let Some(gltf) = assets_gltf.get(&my.0) {
+            commands.spawn_scene(gltf.scenes[0].clone());
+        }    
+    }
 }
