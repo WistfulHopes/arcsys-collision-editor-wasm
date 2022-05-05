@@ -1,273 +1,316 @@
 use arcsys::ggst::pac::GGSTPac;
-use eframe::egui::{self, ComboBox};
-use poll_promise::Promise;
+use bevy::{prelude::{ResMut, AssetServer, Res, Handle, Assets, Commands, SpawnSceneCommands}, reflect::TypeUuid, asset::{AssetLoader, LoadContext, BoxedFuture, LoadedAsset}, gltf::Gltf};
+use bevy_egui::{egui::{self, ComboBox}, EguiContext};
+use serde::Deserialize;
 use self::boxes::BoxesWindow;
-use bbscript::{command_db::{GameDB}, error::BBScriptError, run_parser};
+use bbscript::{command_db::{GameDB}, run_parser};
 
-mod open;
 mod boxes;
 
 #[derive(Default)]
+pub struct AssetPack(Handle<Gltf>);
+
+#[derive(Deserialize, TypeUuid, Default)]
+#[uuid = "39cadc56-aa9c-4543-8640-a018b74b5052"]
+pub struct PacAsset {
+    pub value: Option<GGSTPac>,
+}
+
+#[derive(Default)]
+pub struct PacLoader;
+
+impl AssetLoader for PacLoader {
+    fn load<'a>(
+        &'a self,
+        bytes: &'a [u8],
+        load_context: &'a mut LoadContext,
+    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+        Box::pin(async move {
+            let custom_asset = PacAsset { value: Some(open_file(bytes.to_vec())?)};
+            load_context.set_default_asset(LoadedAsset::new(custom_asset));
+            Ok(())
+        })
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["pac"]
+    }
+}
+
+#[derive(Deserialize, TypeUuid, Default)]
+#[uuid = "f0e5c7ff-743d-4049-b095-d4a26fbc8905"]
+pub struct BBSAsset {
+    pub value: Vec<u8>,
+}
+
+#[derive(Default)]
+pub struct BBSLoader;
+
+impl AssetLoader for BBSLoader {
+    fn load<'a>(
+        &'a self,
+        bytes: &'a [u8],
+        load_context: &'a mut LoadContext,
+    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+        Box::pin(async move {
+            let custom_asset = BBSAsset {value: bytes.to_vec()};
+            load_context.set_default_asset(LoadedAsset::new(custom_asset));
+            Ok(())
+        })
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["bbscript"]
+    }
+}
+
+#[derive(Deserialize, TypeUuid, Default)]
+#[uuid = "5c0609a2-ce4c-4a4c-9652-33eda6aadf28"]
+pub struct RonAsset {
+    pub value: Option<GameDB>,
+}
+
+#[derive(Default)]
+pub struct RonLoader;
+
+impl AssetLoader for RonLoader {
+    fn load<'a>(
+        &'a self,
+        bytes: &'a [u8],
+        load_context: &'a mut LoadContext,
+    ) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
+        Box::pin(async move {
+            let custom_asset = RonAsset { value: Some(GameDB::load(bytes.to_vec())?)};
+            load_context.set_default_asset(LoadedAsset::new(custom_asset));
+            Ok(())
+        })
+    }
+
+    fn extensions(&self) -> &[&str] {
+        &["ron"]
+    }
+}
+#[derive(Default)]
 pub struct MyApp {
-    col_promise: Option<Promise<Result<GGSTPac, String>>>,
-    char_promise: Option<Promise<Vec<u8>>>,
-    ef_promise: Option<Promise<Vec<u8>>>,
-    ron_promise: Option<Promise<Result<GameDB, BBScriptError>>>,
-    image_promise: Option<Promise<Vec<u8>>>,
-    boxes_window: BoxesWindow,
+    pub boxes_window: BoxesWindow,
     loaded: bool,
     selected: String,
     ggst_file_list: Vec<String>,
     file_changed: bool,
+    pac: Option<GGSTPac>,
+    char_script: Option<Vec<u8>>,
+    ef_script: Option<Vec<u8>>,
+    ron: Option<GameDB>,
+    model_part: String,
+    anim_part: String,
+    load_model: bool,
 }
+pub fn update(
+    mut egui_ctx: ResMut<EguiContext>,
+    mut ui_state: ResMut<MyApp>,
+    server: Res<AssetServer>,
+    pacs: ResMut<Assets<PacAsset>>,
+    scripts: ResMut<Assets<BBSAsset>>,
+    rons: ResMut<Assets<RonAsset>>,
+) {
+    ui_state.load_model = false;
 
-impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if self.selected == "".to_string() {
-            self.selected = "SOL".to_string();
-        }
-        if self.ggst_file_list.len() == 0 {
-            self.ggst_file_list.push("SOL".to_string());
-            self.ggst_file_list.push("KYK".to_string());
-            self.ggst_file_list.push("MAY".to_string());
-            self.ggst_file_list.push("AXL".to_string());
-            self.ggst_file_list.push("CHP".to_string());
-            self.ggst_file_list.push("POT".to_string());
-            self.ggst_file_list.push("FAU".to_string());
-            self.ggst_file_list.push("MLL".to_string());
-            self.ggst_file_list.push("ZAT".to_string());
-            self.ggst_file_list.push("RAM".to_string());
-            self.ggst_file_list.push("LEO".to_string());
-            self.ggst_file_list.push("NAG".to_string());
-            self.ggst_file_list.push("GIO".to_string());
-            self.ggst_file_list.push("ANJ".to_string());
-            self.ggst_file_list.push("INO".to_string());
-            self.ggst_file_list.push("GLD".to_string());
-            self.ggst_file_list.push("JKO".to_string());
-            self.ggst_file_list.push("COS".to_string());
-            self.ggst_file_list.push("BKN".to_string());
-            self.ggst_file_list.push("TST".to_string());
-        }
-        let col_promise = self.col_promise.get_or_insert_with(|| {
-            // Begin download.
-            // We download the image using `ehttp`, a library that works both in WASM and on native.
-            // We use the `poll-promise` library to communicate with the UI thread.
-            let ctx = ctx.clone();
-            let (sender, promise) = Promise::new();
-            let request = ehttp::Request::get(format!("https://wistfulhopes.neocities.org/pacs/COL_{}.pac", self.selected));
-            ehttp::fetch(request, move |response| {
-                let pac = response.and_then(parse_col);
-                sender.send(pac); // send the results back to the UI thread.
-                ctx.request_repaint(); // wake up UI thread
-            });
-            self.loaded = false;
-            promise
-        });
-        
-        let char_promise = self.char_promise.get_or_insert_with(|| {
-            // Begin download.
-            // We download the image using `ehttp`, a library that works both in WASM and on native.
-            // We use the `poll-promise` library to communicate with the UI thread.
-            let ctx = ctx.clone();
-            let (sender, promise) = Promise::new();
-            let request = ehttp::Request::get(format!("https://wistfulhopes.neocities.org/scripts/BBS_{}.bbscript", self.selected));
-            ehttp::fetch(request, move |response| {
-                let charscript = response_to_bytes(response.unwrap());
-                sender.send(charscript); // send the results back to the UI thread.
-                ctx.request_repaint(); // wake up UI thread
-            });
-            self.loaded = false;
-            promise
-        });
-        
-        let ef_promise = self.ef_promise.get_or_insert_with(|| {
-            // Begin download.
-            // We download the image using `ehttp`, a library that works both in WASM and on native.
-            // We use the `poll-promise` library to communicate with the UI thread.
-            let ctx = ctx.clone();
-            let (sender, promise) = Promise::new();
-            let request = ehttp::Request::get(format!("https://wistfulhopes.neocities.org/scripts/BBS_{}EF.bbscript", self.selected));
-            ehttp::fetch(request, move |response| {
-                let efscript = response_to_bytes(response.unwrap());
-                sender.send(efscript); // send the results back to the UI thread.
-                ctx.request_repaint(); // wake up UI thread
-            });
-            self.loaded = false;
-            promise
-        });
-        
-        let image_promise = self.image_promise.get_or_insert_with(|| {
-            // Begin download.
-            // We download the image using `ehttp`, a library that works both in WASM and on native.
-            // We use the `poll-promise` library to communicate with the UI thread.
-            let ctx = ctx.clone();
-            let (sender, promise) = Promise::new();
-            let request = ehttp::Request::get(format!("https://wistfulhopes.neocities.org/images/{}/{}.png", self.selected, self.boxes_window.selected));
-            ehttp::fetch(request, move |response| {
-                let image = response_to_bytes(response.unwrap());
-                sender.send(image); // send the results back to the UI thread.
-                ctx.request_repaint(); // wake up UI thread
-            });
-            self.boxes_window.reset_image = false;
-            promise
-        });
-        
-        let ron_promise = self.ron_promise.get_or_insert_with(|| {
-            // Begin download.
-            // We download the image using `ehttp`, a library that works both in WASM and on native.
-            // We use the `poll-promise` library to communicate with the UI thread.
-            let ctx = ctx.clone();
-            let (sender, promise) = Promise::new();
-            let request = ehttp::Request::get(format!("https://wistfulhopes.neocities.org/rons/ggst.ron"));
-            ehttp::fetch(request, move |response| {
-                let ron = parse_ron(response.unwrap());
-                sender.send(ron); // send the results back to the UI thread.
-                ctx.request_repaint(); // wake up UI thread
-            });
-            self.loaded = false;
-            promise
-        });
-        if !self.loaded {
-            self.boxes_window.reset();
-        }
-        self.file_changed = false;
+    if ui_state.selected == "".to_string() {
+        ui_state.selected = "SOL".to_string();
+    }
+    if ui_state.ggst_file_list.len() == 0 {
+        ui_state.ggst_file_list.push("SOL".to_string());
+        ui_state.ggst_file_list.push("KYK".to_string());
+        ui_state.ggst_file_list.push("MAY".to_string());
+        ui_state.ggst_file_list.push("AXL".to_string());
+        ui_state.ggst_file_list.push("CHP".to_string());
+        ui_state.ggst_file_list.push("POT".to_string());
+        ui_state.ggst_file_list.push("FAU".to_string());
+        ui_state.ggst_file_list.push("MLL".to_string());
+        ui_state.ggst_file_list.push("ZAT".to_string());
+        ui_state.ggst_file_list.push("RAM".to_string());
+        ui_state.ggst_file_list.push("LEO".to_string());
+        ui_state.ggst_file_list.push("NAG".to_string());
+        ui_state.ggst_file_list.push("GIO".to_string());
+        ui_state.ggst_file_list.push("ANJ".to_string());
+        ui_state.ggst_file_list.push("INO".to_string());
+        ui_state.ggst_file_list.push("GLD".to_string());
+        ui_state.ggst_file_list.push("JKO".to_string());
+        ui_state.ggst_file_list.push("COS".to_string());
+        ui_state.ggst_file_list.push("BKN".to_string());
+        ui_state.ggst_file_list.push("TST".to_string());
+    }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ComboBox::from_label("Strive")
-                .selected_text(format!("{:?}", self.selected))
-                .width(150.0)
-                .show_ui(ui, |ui| {
-                    for name in &self.ggst_file_list {
-                        if ui.selectable_label(true, name)
-                        .clicked()
-                        {
-                            self.selected = name.clone();
-                            self.loaded = false;
-                            self.file_changed = true;
-                        };
-                    }
-                });
-                let mut visuals = ui.ctx().style().visuals.clone();
-                visuals.light_dark_radio_buttons(ui);
-                ui.ctx().set_visuals(visuals);
-            });
-            match ron_promise.ready() {
-                None => {
-                    ui.label("Loading game functions...");
-                    ()
-                }
-                Some(Err(e)) => {
-                    ui.label(format!("Failed to load game functions! {}", e));
-                    ()
-                }
-                Some(Ok(ron)) => {
-                    ui.label("Game functions loaded!");
-                    match char_promise.ready() {
-                        None => {
-                            ui.label("Loading character script...");
-                            ()
-                        }
-                        Some(bytes) => {
-                            if self.boxes_window.char_script == "" {
-                                self.boxes_window.char_script = match run_parser(ron,bytes, Some(0 as usize), Some(0 as usize), false) {
-                                    Ok(script) => {script},
-                                    Err(_) => "Error".to_string()
-                                };
-                                self.boxes_window.collect_states();
-                            }
-                            if self.boxes_window.char_script == "Error".to_string() {
-                                ui.label(format!("Failed to load character script!!"));
-                            }
-                            ()
-                        }
+    if !ui_state.loaded {
+        ui_state.boxes_window.reset();
+    }
+    ui_state.file_changed = false;
+
+    let pac_asset: Handle<PacAsset> = server.load(&format!("pacs/COL_{}.pac", ui_state.selected));
+    let char_script_asset: Handle<BBSAsset> = server.load(&format!("scripts/BBS_{}.bbscript", ui_state.selected));
+    let ef_script_asset: Handle<BBSAsset> = server.load(&format!("scripts/BBS_{}EF.bbscript", ui_state.selected));
+    let ron_asset: Handle<RonAsset> = server.load("rons/ggst.ron");
+
+    if ui_state.pac.is_none() {
+        ui_state.pac = match pacs.get(pac_asset){
+            Some(pac) => pac.value.clone(),
+            None => None,
+        };
+    }
+
+    if ui_state.char_script.is_none() {
+        ui_state.char_script = match scripts.get(char_script_asset){
+            Some(script) => Some(script.value.clone()),
+            None => None,
+        };
+    }
+
+    if ui_state.ef_script.is_none() {
+        ui_state.ef_script = match scripts.get(ef_script_asset){
+            Some(script) => Some(script.value.clone()),
+            None => None,
+        };
+    }
+
+    if ui_state.ron.is_none() {
+        ui_state.ron = match rons.get(ron_asset){
+            Some(ron) => ron.value.clone(),
+            None => None,
+        };
+    }
+
+    egui::CentralPanel::default().show(egui_ctx.ctx_mut(), |ui| {
+        ui.horizontal(|ui| {
+            ComboBox::from_label("Strive")
+            .selected_text(format!("{:?}", ui_state.selected))
+            .width(150.0)
+            .show_ui(ui, |ui| {
+                for name in ui_state.ggst_file_list.clone() {
+                    if ui.selectable_label(true, name.as_str())
+                    .clicked()
+                    {
+                        ui_state.selected = name.clone();
+                        ui_state.loaded = false;
+                        ui_state.file_changed = true;
+                        ui_state.load_model = true;
                     };
+                }
+            });
+            let mut visuals = ui.ctx().style().visuals.clone();
+            visuals.light_dark_radio_buttons(ui);
+            ui.ctx().set_visuals(visuals);
+        });
 
-                    match ef_promise.ready() {
-                        None => {
-                            ui.label("Loading effect script...");
-                            ()
-                        }
-                        Some(bytes) => {
-                            if self.boxes_window.ef_script == "" {
-                                self.boxes_window.ef_script = match run_parser(ron,bytes, Some(0 as usize), Some(0 as usize), false) {
-                                    Ok(script) => script,
-                                    Err(_) => "Error".to_string()
-                                };
-                                self.boxes_window.collect_ef_states();
-                            };
-                            if self.boxes_window.ef_script == "Error".to_string() {
-                                ui.label("Failed to load effect script!!");
-                            }
-                            ()
-                        }
-                    };
-
-                    match image_promise.ready() {
-                        None => {
-                            ()
-                        }
-                        Some(bytes) => {
-                            if self.boxes_window.image.is_none() {
-                                match self.boxes_window.bytes_to_image(bytes) {
-                                    Ok(image) => {
-                                        self.boxes_window.image = Some(image);
-                                    }
-                                    Err(_) => (),
-                                }    
-                            }
-                        }
-                    }
-                }
-            };
-            match col_promise.ready() {
-                None => {
-                    ui.label("Loading collision data...");
-                    ()
-                }
-                Some(Err(e)) => {
-                    ui.label(format!("Failed to read pac! Error: {}", e));
-                    ()
-                },
-                Some(Ok(pac)) => {
-                    if !self.loaded {
-                        self.boxes_window.open_file(&pac);
-                    }
-                    self.loaded = true;
-                    self.boxes_window.ui(ui);
-                }
+        match ui_state.ron.clone() {
+            None => {
+                ui.label("Loading game functions...");
+                ()
             }
-        });
-        if self.file_changed {
-            self.col_promise = None;
-            self.char_promise = None;
-            self.ef_promise = None;
+            Some(ron) => {
+                ui.label("Game functions loaded!");
+                match ui_state.char_script.clone() {
+                    None => {
+                        ui.label("Loading character script...");
+                        ()
+                    }
+                    Some(bytes) => {
+                        if ui_state.boxes_window.char_script == "" {
+                            ui_state.boxes_window.char_script = match run_parser(&ron,&bytes, Some(0 as usize), Some(0 as usize), false) {
+                                Ok(script) => {script},
+                                Err(_) => "Error".to_string()
+                            };
+                            ui_state.boxes_window.collect_states();
+                        }
+                        if ui_state.boxes_window.char_script == "Error".to_string() {
+                            ui.label(format!("Failed to load character script!!"));
+                        }
+                        ()
+                    }
+                };
+
+                match ui_state.ef_script.clone() {
+                    None => {
+                        ui.label("Loading effect script...");
+                        ()
+                    }
+                    Some(bytes) => {
+                        if ui_state.boxes_window.ef_script == "" {
+                            ui_state.boxes_window.ef_script = match run_parser(&ron,&bytes, Some(0 as usize), Some(0 as usize), false) {
+                                Ok(script) => script,
+                                Err(_) => "Error".to_string()
+                            };
+                            ui_state.boxes_window.collect_ef_states();
+                        };
+                        if ui_state.boxes_window.ef_script == "Error".to_string() {
+                            ui.label("Failed to load effect script!!");
+                        }
+                        ()
+                    }
+                };
+            }
+        };
+        match ui_state.pac.clone() {
+            None => {
+                ui.label("Loading collision data...");
+                ()
+            }
+            Some(pac) => {
+                if !ui_state.loaded {
+                    ui_state.boxes_window.open_file(&pac);
+                }
+                ui_state.loaded = true;
+                ui_state.boxes_window.ui(ui);
+            }
         }
-        if self.boxes_window.reset_image {
-            self.image_promise = None;
-            self.boxes_window.image = Default::default();
-            self.boxes_window.texture = Default::default();
-        }
+    });
+    if ui_state.file_changed {
+        ui_state.pac = None;
+        ui_state.char_script = None;
+        ui_state.ef_script = None;
     }
 }
 
-impl MyApp {
-    /// Called once before the first frame.
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        // This is also where you can customized the look at feel of egui using
-        // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
-        Default::default()
+pub fn open_file(file_buf: Vec<u8>) -> Result<GGSTPac, arcsys::Error> {
+    match GGSTPac::parse(&file_buf)
+    {
+        Ok(file) => return Ok(file),
+        Err(e) => return Err(e),
+    };
+}
+
+pub fn load_gltf (
+    ui_state: ResMut<MyApp>,
+    server: Res<AssetServer>,
+    mut commands: Commands,
+) {
+    if ui_state.load_model {
+        let path = format!("models/{}/{}_{}.gltf", ui_state.selected, ui_state.selected.to_ascii_lowercase(), ui_state.model_part);
+        let gltf: Handle<Gltf> = server.load(&path);
+        commands.insert_resource(AssetPack(gltf));    
     }
 }
 
-fn parse_col(response: ehttp::Response) -> Result<GGSTPac, String> {
-    let pac = open::open_file(response.bytes);
-    pac
+pub fn load_animation (
+    ui_state: ResMut<MyApp>,
+    assets_gltf: Res<Assets<Gltf>>,
+    mut commands: Commands,
+    my: Res<AssetPack>,
+) {
+    if let Some(gltf) = assets_gltf.get(&my.0) {
+        let path = format!("{}_{}", ui_state.boxes_window.selected, ui_state.anim_part);
+        commands.insert_resource(gltf.named_animations[&path].clone())
+    }    
 }
-fn parse_ron(response: ehttp::Response) -> Result<GameDB, BBScriptError> {
-    let ron = GameDB::load(response.bytes);
-    ron
-}
-fn response_to_bytes(response: ehttp::Response) -> Vec<u8> {
-    response.bytes
+
+pub fn spawn_scene(
+    ui_state: ResMut<MyApp>,
+    assets_gltf: Res<Assets<Gltf>>,
+    mut commands: Commands,
+    my: Res<AssetPack>,
+) {
+    if ui_state.load_model {
+        if let Some(gltf) = assets_gltf.get(&my.0) {
+            commands.spawn_scene(gltf.scenes[0].clone());
+        }    
+    }
 }

@@ -12,8 +12,7 @@ default = ["console_error_panic_hook"]
 
 [dependencies]
 wasm-bindgen = { version = "0.2.80", features = ["serde-serialize"]  }
-arcsys = { git = "https://github.com/WistfulHopes/arcsys.git" }
-eframe = { version = "0.18.0", features = ["persistence"] }
+arcsys = { path = "arcsys" }
 rfd = "0.8"
 anyhow = "1"
 serde = { version = "1.0.80", features = ["derive"] }
@@ -26,6 +25,11 @@ poll-promise = "0.1"
 ehttp = "0.2"
 bbscript = { git = "https://github.com/WistfulHopes/bbscript.git" }
 substring = "1.4.5"
+bevy = "0.7"
+bevy_egui = "0.14"
+ron = "0.7"
+tracing-wasm = "0.2.1"
+bevy-web-resizer = { git = "https://github.com/frewsxcv/bevy-web-resizer.git" }
 
 # The `console_error_panic_hook` crate provides better debugging of panics by
 # logging them with `console.error`. This is great for development, but requires
