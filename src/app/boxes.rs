@@ -1,6 +1,6 @@
 use std::{path::{PathBuf}, io::Cursor};
 use arcsys::{ggst::{pac::{GGSTPac}, jonbin::{GGSTJonBin}}};
-use eframe::{egui::{self, Sense, Frame}, emath::{Rect, Pos2, Vec2}, epaint::{Color32, Stroke, ColorImage, Mesh, TextureId, Shape}};
+use bevy_egui::{egui::{self, Sense, Frame, emath::{Rect, Pos2, Vec2}, epaint::{Color32, Stroke, ColorImage, Mesh, TextureId, Shape}}};
 use image::{ImageError};
 use serde::{Serialize, Deserialize};
 use std::collections::{BTreeMap};
@@ -179,7 +179,7 @@ Double click to reset to the original position.");
             let width = ui.available_width();
             let jonb = self.jonbins.get_mut(&self.selected).unwrap();
             let (mut response, painter) = ui.allocate_painter(
-                eframe::emath::Vec2 {
+                Vec2 {
                     x: width,
                     y: ui.available_height()
                 },
